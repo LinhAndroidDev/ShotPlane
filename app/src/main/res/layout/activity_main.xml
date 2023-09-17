@@ -73,6 +73,14 @@
         android:layout_height="120dp"
         android:layout_centerInParent="true"
         android:src="@drawable/icon_play" />
+    <ImageView
+        android:id="@+id/test"
+        android:visibility="gone"
+        android:layout_marginStart="200dp"
+        android:layout_marginTop="100dp"
+        android:background="@drawable/icon_update_bullet"
+        android:layout_width="40dp"
+        android:layout_height="40dp"/>
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

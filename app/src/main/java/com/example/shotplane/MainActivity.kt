@@ -6,17 +6,18 @@ import android.content.pm.ActivityInfo
 import android.graphics.Point
 import android.media.MediaPlayer
 import android.os.Bundle
-import android.os.CountDownTimer
 import android.view.Display
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowManager
-import android.view.animation.Animation
-import android.view.animation.AnimationUtils
+import android.view.animation.*
 import android.widget.ImageView
 import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
+import io.reactivex.Observable
+import io.reactivex.android.schedulers.AndroidSchedulers
+import io.reactivex.disposables.CompositeDisposable
 import kotlinx.android.synthetic.main.activity_main.*
+import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.sqrt
@@ -33,13 +34,11 @@ class MainActivity : AppCompatActivity() {
     lateinit var fail: MediaPlayer
     lateinit var enlarge: Animation
     lateinit var zoomOut: Animation
-    lateinit var createBullet: CountDownTimer
-    lateinit var moveBullet: CountDownTimer
     var listHeader: ArrayList<ImageView> = arrayListOf()
     var listCount: ArrayList<Int> = arrayListOf()
     var listSpeech: ArrayList<Int> = arrayListOf()
-    lateinit var moveItemTime: CountDownTimer
     var SCORE: Int = 50
+    val compositeDisposable = CompositeDisposable()
 
     @SuppressLint("SetTextI18n")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,8 +69,6 @@ class MainActivity : AppCompatActivity() {
             listSpeech.add(1)
         }
 
-        setMoveItem()
-
         setWindow()
 
         getSizeWindow()
@@ -84,16 +81,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setMoveItem() {
-        moveItemTime = object : CountDownTimer(600000, 10) {
-            @SuppressLint("SetTextI18n")
-            override fun onTick(p0: Long) {
+        val moveItemTime = Observable.interval(10, TimeUnit.MILLISECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe {
                 for(i in 0 until listHeader.size){
                     listHeader[i].y = listHeader[i].y + listSpeech[i]
-                    if (listHeader[i].y - screenHeight >= 0) {
+                    if (listHeader[i].y + listHeader[i].height >= screenHeight) {
                         if(listHeader[i].visibility == View.VISIBLE && SCORE > 0){
                             SCORE -= 10
                             score.text = "Điểm của bạn $SCORE"
                         }
+                        listCount[i] = 0
+                        listSpeech[i] = 1
                         setVisibleHeaderAgain(listHeader[i])
                     }
                     setCollidePLaneWithHeader(listHeader[i],plane)
@@ -101,15 +100,13 @@ class MainActivity : AppCompatActivity() {
                 TIME_CHANGE += 10
             }
 
-            override fun onFinish() {
-
-            }
-        }
+        compositeDisposable.add(moveItemTime)
     }
 
     private fun moveBackGround() {
-        object : CountDownTimer(600000, 10) {
-            override fun onTick(p0: Long) {
+        Observable.interval(40, TimeUnit.MILLISECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe {
                 screenFirst.y = screenFirst.y + 6
                 screenSecond.y = screenSecond.y + 6
                 if ((screenFirst.y - screenHeight) >= 0) {
@@ -119,12 +116,6 @@ class MainActivity : AppCompatActivity() {
                     screenSecond.y = (-1 * screenHeight).toFloat()
                 }
             }
-
-            override fun onFinish() {
-
-            }
-
-        }.start()
     }
 
     private fun setPositionItem() {
@@ -134,6 +125,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("ClickableViewAccessibility")
     private fun initUi() {
         play.setOnClickListener {
+            rotationAndTranslate(test)
             createBullet()
             plane.isEnabled = true
             plane.x = (screenWidth/2 - plane.width/2).toFloat()
@@ -143,13 +135,14 @@ class MainActivity : AppCompatActivity() {
             SCORE = 50
             setVisibleHeader()
 
-            moveItemTime.start()
+            setMoveItem()
         }
 
         //move plane
         plane.setOnTouchListener { _, even ->
             when (even?.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    /** Now move view to that position */
                     xDown = even.x
                     yDown = even.y
                 }
@@ -159,15 +152,23 @@ class MainActivity : AppCompatActivity() {
                     val movedY: Float = even.y
 
                     /** Calcualate how much the user moved */
-                    /** Calcualate how much the user moved */
                     val distanceX: Float = movedX - xDown
                     val distanceY: Float = movedY - yDown
 
-                    /** Now move view to that position */
-
-                    /** Now move view to that position */
                     plane.x = plane.x + distanceX
                     plane.y = plane.y + distanceY
+
+                    if (plane.x < 0) {
+                        plane.x = 0f
+                    } else if (plane.x > screenWidth - plane.width) {
+                        plane.x = (screenWidth - plane.width).toFloat()
+                    }
+
+                    if (plane.y < 0) {
+                        plane.y = 0f
+                    } else if (plane.y > screenHeight - plane.height) {
+                        plane.y = (screenHeight - plane.height).toFloat()
+                    }
                 }
             }
             true
@@ -175,52 +176,115 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createBullet() {
-        createBullet = object : CountDownTimer(600000, 200) {
-            override fun onTick(p0: Long) {
+        val createBullet = Observable.interval(200, TimeUnit.MILLISECONDS)
+            .observeOn(AndroidSchedulers.mainThread())
+            .subscribe {
                 val bullet = ImageView(applicationContext)
-                val params = RelativeLayout.LayoutParams(30, 45)
-                bullet.layoutParams = params
-                layoutGame.addView(bullet)
-                bullet.setBackgroundResource(R.drawable.icon_dan)
-                bullet.x = plane.x + 45
-                bullet.y = plane.y - 30
+                val bullet1 = ImageView(applicationContext)
+                val bullet2 = ImageView(applicationContext)
 
-                moveBullet = object : CountDownTimer(600000, 10) {
-                    @SuppressLint("SetTextI18n")
-                    override fun onTick(p0: Long) {
+                addViewBullet(bullet)
+                addViewBullet(bullet1)
+                addViewBullet(bullet2)
+
+                Observable.interval(30, TimeUnit.MILLISECONDS)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe {
                         bullet.y = bullet.y - 5
-                        for(i in 0 until listHeader.size){
-                            if(setCollideBulletWithHeader(listHeader[i], bullet, listCount[i]) == 0){
-                                listHeader[i].visibility = View.GONE
-                                bullet.visibility = View.GONE
-                                setVisibleHeaderAgain(listHeader[i])
-                                increasePoint.start()
-                                listCount[i] = 0
-                                listSpeech[i] = 1
-                                SCORE += 10
-                                score.text = "Điểm của bạn $SCORE"
-                            }else if(setCollideBulletWithHeader(listHeader[i], bullet, listCount[i]) == 1){
-                                bullet.visibility = View.GONE
-                                bullet.y = bullet.y + 100000
-                                bullet.x = bullet.x + 100000
-                                listCount[i]++
-                                listSpeech[i] = listCount[i] + 2
+                        bullet1.x = (bullet1.x - 5/ sqrt(3.0)).toFloat()
+                        bullet1.y = bullet1.y - 5
+                        bullet2.x = (bullet2.x + 5/ sqrt(3.0)).toFloat()
+                        bullet2.y = bullet2.y - 5
+
+                        countCollideBullet(bullet)
+                        countCollideBullet(bullet1)
+                        countCollideBullet(bullet2)
+                    }
+            }
+        compositeDisposable.add(createBullet)
+    }
+
+    private fun countCollideBullet(bullet: ImageView) {
+        for(i in 0 until listHeader.size){
+            if(setCollideBulletWithHeader(listHeader[i], bullet, listCount[i]) == 0){
+                val explosion = ImageView(applicationContext)
+                val params = RelativeLayout.LayoutParams(200, 150)
+                explosion.layoutParams = params
+                layoutGame.addView(explosion)
+                explosion.setBackgroundResource(R.drawable.explosion0)
+                explosion.x = bullet.x - 90
+                explosion.y = bullet.y - 90
+
+                var k = 0
+                Observable.interval(100, TimeUnit.MILLISECONDS)
+                    .observeOn(AndroidSchedulers.mainThread())
+                    .subscribe {
+                        when (k) {
+                            0 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion0)
+                                k = 1
+                            }
+                            1 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion1)
+                                k = 2
+                            }
+                            2 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion2)
+                                k = 3
+                            }
+                            3 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion3)
+                                k = 4
+                            }
+                            4 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion4)
+                                k = 5
+                            }
+                            5 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion5)
+                                k = 6
+                            }
+                            6 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion6)
+                                k = 7
+                            }
+                            7 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion7)
+                                k = 8
+                            }
+                            8 -> {
+                                explosion.setBackgroundResource(R.drawable.explosion8)
+                                k = 0
+                                explosion.visibility = View.GONE
                             }
                         }
                     }
 
-                    override fun onFinish() {
-
-                    }
-
-                }.start()
+                listHeader[i].visibility = View.GONE
+                bullet.visibility = View.GONE
+                setVisibleHeaderAgain(listHeader[i])
+                increasePoint.start()
+                listCount[i] = 0
+                listSpeech[i] = 1
+                SCORE += 10
+                score.text = "Điểm của bạn $SCORE"
+            }else if(setCollideBulletWithHeader(listHeader[i], bullet, listCount[i]) == 1){
+                bullet.visibility = View.GONE
+                bullet.y = bullet.y + 100000
+                bullet.x = bullet.x + 100000
+                listCount[i]++
+                listSpeech[i] = listCount[i] + 2
             }
+        }
+    }
 
-            override fun onFinish() {
-
-            }
-
-        }.start()
+    private fun addViewBullet(bl: ImageView) {
+        val params = RelativeLayout.LayoutParams(20, 45)
+        bl.layoutParams = params
+        layoutGame.addView(bl)
+        bl.setBackgroundResource(R.drawable.rgrg)
+        bl.x = plane.x + 45
+        bl.y = plane.y - 30
     }
 
     private fun setCollideBulletWithHeader(header: ImageView, bullet: ImageView, count: Int) : Int{
@@ -232,7 +296,7 @@ class MainActivity : AppCompatActivity() {
 
         if (-70 <= distanceFromBulletToHeader && distanceFromBulletToHeader <= 70 && header.y >= 0) {
             if (header.visibility == View.VISIBLE) {
-                return if(count == 5){
+                return if(count == 3){
                     0
                 }else{
                     1
@@ -251,8 +315,7 @@ class MainActivity : AppCompatActivity() {
         if(-70 <= distanceFromPlaneToHeader && distanceFromPlaneToHeader <= 70
             && header.y >= 0 && header.visibility == View.VISIBLE){
             fail.start()
-            moveItemTime.cancel()
-            createBullet.cancel()
+            compositeDisposable.clear()
             plane.isEnabled = false
             play.visibility = View.VISIBLE
             play.startAnimation(enlarge)
@@ -297,6 +360,23 @@ class MainActivity : AppCompatActivity() {
         anim.start()
     }
 
+    private fun rotationAndTranslate(view: View){
+        val rotate = RotateAnimation(0f, 360f, Animation.RELATIVE_TO_SELF, 0.5f, Animation.RELATIVE_TO_SELF, 0.5f)
+        rotate.duration = 1000
+        rotate.repeatCount = Animation.INFINITE
+
+        val translate = TranslateAnimation(Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 1f,
+            Animation.RELATIVE_TO_SELF, 0f, Animation.RELATIVE_TO_SELF, 1f)
+        translate.duration = 1000
+        translate.repeatCount = Animation.INFINITE
+
+        val set = AnimationSet(true)
+        set.addAnimation(rotate)
+        set.addAnimation(translate)
+
+        view.startAnimation(set)
+    }
+
     private fun getSizeWindow() {
         val display: Display = windowManager.defaultDisplay
         val size = Point()
@@ -306,10 +386,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setWindow() {
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        )
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LOW_PROFILE
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     }
 }
