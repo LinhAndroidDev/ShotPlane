@@ -89,12 +89,14 @@ class MainActivity : AppCompatActivity() {
             override fun onTick(p0: Long) {
                 for(i in 0 until listHeader.size){
                     listHeader[i].y = listHeader[i].y + listSpeech[i]
-                    if (listHeader[i].y - screenHeight >= 0) {
+                    if (listHeader[i].y + listHeader[i].height >= screenHeight) {
                         if(listHeader[i].visibility == View.VISIBLE && SCORE > 0){
                             SCORE -= 10
                             score.text = "Điểm của bạn $SCORE"
                         }
                         setVisibleHeaderAgain(listHeader[i])
+                        listCount[i] = 0
+                        listSpeech[i] = 1
                     }
                     setCollidePLaneWithHeader(listHeader[i],plane)
                 }
